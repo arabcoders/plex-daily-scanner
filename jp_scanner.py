@@ -23,6 +23,7 @@ import VideoFiles
 import Stack
 import Utils
 import time
+import UnicodeHelper
 
 __author__ = "ArabCoders"
 __copyright__ = "Copyright 2024"
@@ -35,8 +36,7 @@ __email__ = ""
 
 try:
     ### Define PLEX_ROOT ##################################################################################
-    PLEX_ROOT = os.path.abspath(os.path.join(os.path.dirname(
-        inspect.getfile(inspect.currentframe())), "..", ".."))
+    PLEX_ROOT = os.path.abspath(os.path.join(os.path.dirname(inspect.getfile(inspect.currentframe())), "..", ".."))
     if not os.path.isdir(PLEX_ROOT):
         path_location = {
             'Windows': '%LOCALAPPDATA%\\Plex Media Server',
@@ -52,42 +52,46 @@ except:
 # load custom path from env
 customPath = os.environ.get('JP_SCANNER_PATH') or PLEX_ROOT
 
-logging.basicConfig(
-    filename=os.path.join(PLEX_ROOT, 'Logs', 'jp_scanner.log'),
-    format="%(asctime)s [%(levelname)-5.5s] %(message)s",
-    level=logging.DEBUG
-)
+LOGGING_LEVEL_MAP = {
+    logging.DEBUG: 3,
+    logging.INFO: 2,
+    logging.WARNING: 1,
+    logging.ERROR: 0
+}
 
-logger = logging.getLogger(__name__)
 
 def logit(message, level=logging.INFO):
-    logger.log(level, message)
+    if level not in LOGGING_LEVEL_MAP:
+        level = logging.INFO
 
-YT_RX = re.compile(
-    '(?<=\[)(?:youtube-)?(?P<id>[a-zA-Z0-9\-_]{11})(?=\])', re.IGNORECASE)
+    Utils.Log(message=message, level=LOGGING_LEVEL_MAP[level], source='jp_scanner.bundle')
+
+
+YT_RX = re.compile(r'(?<=\[)(?:youtube-)?(?P<id>[a-zA-Z0-9\-_]{11})(?=\])', re.IGNORECASE)
 YT_FILE_RX = re.compile(
-    '^(?P<year>\d{4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s-?(?P<title>.+)', re.IGNORECASE)
-YT_JSON_DATE_RX = re.compile(
-    '(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})', re.IGNORECASE)
+    r'^(?P<year>\d{4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s-?(?P<title>.+)', re.IGNORECASE)
+YT_JSON_DATE_RX = re.compile(r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})', re.IGNORECASE)
+YT_FILE_DATE = re.compile(r'^(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s?', re.IGNORECASE)
+
 RX_LIST = []
 
 DEFAULT_RX = [
     # YY?YY(-._)MM(-._)DD -? series -? epNumber -? title
-    '^(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s-?(?P<series>.+?)(?P<epNumber>\#(\d+)|ep(\d+)|DVD[0-9.-]+|SP[0-9.-]+) -?(?P<title>.+)',
+    r'^(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s-?(?P<series>.+?)(?P<epNumber>\#(\d+)|ep(\d+)|DVD[0-9.-]+|SP[0-9.-]+) -?(?P<title>.+)',
     # YY?YY(-._)MM(-._)DD -? title
-    '^(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s?-?(?P<title>.+)',
+    r'^(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s?-?(?P<title>.+)',
     # title YY?YY(-._)MM(-._)DD at end of filename.
-    '(?P<title>.+?)(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})$',
+    r'(?P<title>.+?)(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})$',
     # series - YY?YY(-._)MM(-._)DD -? title
-    '(?P<series>.+?)(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s?-?(?P<title>.+)?',
+    r'(?P<series>.+?)(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s?-?(?P<title>.+)?',
     # series ep0000 Title
-    '(?P<series>.+?)\s?[Ee][Pp](?P<episode>[0-9]{1,4})\s?(?P<title>.+)',
+    r'(?P<series>.+?)\s?[Ee][Pp](?P<episode>[0-9]{1,4})\s?(?P<title>.+)',
     # S00E00 - Title
-    '^[Ss](?P<season>[0-9]{1,2})[Ee](?P<episode>[0-9]{1,4})\s?-?(?P<title>.+)',
+    r'^[Ss](?P<season>[0-9]{1,2})[Ee](?P<episode>[0-9]{1,4})\s?-?(?P<title>.+)',
     # Title ep0000
-    '(?P<title>.+?)\s?[Ee][Pp](?P<episode>[0-9]{1,4})$',
+    r'(?P<title>.+?)\s?[Ee][Pp](?P<episode>[0-9]{1,4})$',
     # Standard scanner Series - S00E00 - Title
-    '^(?P<series>.+?)[Ss](?P<season>[0-9]{1,})[Ee](?P<episode>[0-9]{1,})\s?-?(?P<title>.+)',
+    r'^(?P<series>.+?)[Ss](?P<season>[0-9]{1,})[Ee](?P<episode>[0-9]{1,})\s?-?(?P<title>.+)',
 ]
 
 # Load Custom Regex patterns.matchers from `jp_scanner.json` file.
@@ -162,7 +166,6 @@ def handleMatch(match, show, file=None):
 
     if title:
         title = title.strip().strip('-').strip()
-        logit("Title: {}".format(title))
 
         if match.groupdict().has_key('epNumber'):
             title = match.group('epNumber') + ' - ' + title
@@ -177,7 +180,7 @@ def handleMatch(match, show, file=None):
     if season is None and episode is None:
         return None
 
-    if file and len(str(episode)) < 8 and os.path.exists(file):
+    if file and released_date and len(str(episode)) < 8 and os.path.exists(file):
         json_ts = time.gmtime(os.path.getmtime(file))
         minute = json_ts[4]
         seconds = json_ts[5]
@@ -205,22 +208,28 @@ def handleYouTube(fullpath, file):
         except Exception as e:
             logit("Error loading json file: " + str(json_file) + " - " + str(e), logging.ERROR)
             return None
-        
-        json_date = YT_JSON_DATE_RX.match(data.get('upload_date'))
+
+        if not data.get('upload_date'):
+            json_date = YT_FILE_DATE.search(os.path.basename(file))
+            if not json_date:
+                logit("Error matching file: '{}', no upload_date in json.file".format(file))
+                return None
+        else:
+            json_date = YT_JSON_DATE_RX.match(data.get('upload_date'))
 
         title = data.get('title')
         year = json_date.group('year') if json_date else None
+        if year and len(year) == 2:
+            year = '20' + year
+
         month = json_date.group('month') if json_date else None
         day = json_date.group('day') if json_date else None
-        season = json_date.group('year') if json_date else None
-        released_date = "{}-{}-{}".format(year, month,
-                                          day) if year and month and day else None
+        season = year
+        released_date = "{}-{}-{}".format(year, month, day) if year and month and day else None
 
         if not data.get('epoch'):
-            # parse hour/min from file timestamp.
             json_ts = time.gmtime(os.path.getmtime(fullpath))
         else:
-            # parse unix timestamp from json epoch variable
             json_ts = time.gmtime(float(data.get('epoch')))
 
         hour = json_ts[3]
@@ -305,28 +314,24 @@ def Scan(path, files, mediaList, subdirs):
                     if data:
                         found = True
                         tv_show = Media.Episode(
-                            show,
-                            int(data.get('season')),
-                            int(data.get('episode')),
-                            data.get('title'),
-                            int(data.get('year'))
+                            show=UnicodeHelper.toBytes(show),
+                            season=int(data.get('season')),
+                            episode=int(data.get('episode')),
+                            title=UnicodeHelper.toBytes(data.get('title')),
+                            year=int(data.get('year'))
                         )
 
                         if data.get('released_date'):
                             tv_show.released_at = data.get('released_date')
 
-                        logit(
-                            "{}: {} - S{}E{}".format(
-                                file, show,
-                                data.get('season'),
-                                data.get('episode'),
-                            ),
-                            logging.DEBUG
-                        )
+                        logit("{}: {} - S{}E{}".format(
+                            file, show, data.get('season'), data.get('episode')
+                        ), logging.DEBUG)
+
                         tv_show.parts.append(i)
                         mediaList.append(tv_show)
                     else:
-                        logit("Youtube error matching: " + str(i))
+                        logit("Youtube error matching: " + str(i), logging.ERROR)
                 else:
                     # Handle normal content.
                     for rx in RX_LIST:
@@ -336,41 +341,35 @@ def Scan(path, files, mediaList, subdirs):
 
                         data = handleMatch(match, show, i)
                         if not data:
+                            logit("Error matching: " + str(file), logging.ERROR)
                             continue
 
                         found = True
 
                         tv_show = Media.Episode(
-                            show,
-                            data.get('season'),
-                            data.get('episode'),
-                            data.get('title'),
-                            data.get('year')
+                            show=UnicodeHelper.toBytes(show),
+                            season=data.get('season'),
+                            episode=data.get('episode'),
+                            title=UnicodeHelper.toBytes(data.get('title')),
+                            year=int(data.get('year'))
                         )
 
                         if data.get('released_date'):
                             tv_show.released_at = data.get('released_date')
 
-                        logit(
-                            "{}: {} - S{}E{} - {}".format(
-                                file,
-                                show,
-                                data.get('season'),
-                                data.get('episode'),
-                                data.get('title')
-                            ),
-                            logging.DEBUG
-                        )
+                        logit("{}: {} - S{}E{}".format(
+                            file, show, data.get('season'), data.get('episode')
+                        ), logging.DEBUG)
 
                         tv_show.parts.append(i)
                         mediaList.append(tv_show)
                         break
 
-                if found == True:
+                if True == found:
                     continue
 
-                if done == False:
-                    logit("Got nothing for: " + str(file))
+                if False == done:
+                    logit("Got nothing for: " + str(file), logging.ERROR)
 
     # Stack the results.
     Stack.Scan(path, files, mediaList, subdirs)
@@ -382,4 +381,4 @@ if __name__ == '__main__':
     files = [os.path.join(path, file) for file in os.listdir(path)]
     media = []
     Scan(path[1:], files, media, [])
-    logit("Files detected: " + str(media))
+    logit("Files detected: " + str(media), logging.DEBUG)
