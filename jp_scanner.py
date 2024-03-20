@@ -351,7 +351,7 @@ def Scan(path, files, mediaList, subdirs):
                             season=data.get('season'),
                             episode=data.get('episode'),
                             title=UnicodeHelper.toBytes(data.get('title')),
-                            year=int(data.get('year'))
+                            year=data.get('year')
                         )
 
                         if data.get('released_date'):
