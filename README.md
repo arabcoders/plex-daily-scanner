@@ -62,3 +62,24 @@ You can do so by, creating a file named `jp_scanner.json` next to where you crea
     ...
 ]
 ```
+
+## I keep getting duplicate files?
+
+This most likely due to matching date object and file modified time either from the file itself or the `.info.json` file for the yt-dlp agent. To Fix this issue, i included
+`utils.py` file which is a command line that require modern python version. To fix the issue you need to download the `utils.py` file and run the following command:
+
+```bash
+$ python3 utils.py --recursive --update-id /home/media/....
+```
+
+You can run the command on the entire collection or the specific show directory. The command will do what is needed to alter the mod time of the file or the `epoch` field inside `info.json`. 
+
+However, this will only work if you follow the standard naming we mentioned above. If you have a different naming convention, then you are better off using plex agents.
+
+## How to test file names?
+
+You can use the `tester.py` file to test the file names. The file is a command line tool that require modern python version. To test the file names, clone the repository and run the following command:
+
+```bash
+$ python3 tester.py -i 'path to the file or directory'
+```

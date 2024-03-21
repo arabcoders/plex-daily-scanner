@@ -1,0 +1,18 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+input/*
+output/*
+cache/*
+share/*
+*__pycache__*
+aadnk*
+pyvenv.cfg
+test/*
+.venv/*
+.venv~/*
+.venv2/*
+aadnk/*
+whisper-ctranslate2/*
+.env
