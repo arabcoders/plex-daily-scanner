@@ -46,7 +46,7 @@ If the date length is less than `8` and to avoid identifying multiple episodes t
 
 So the final episode index becomes `1` + `episode air date` + `last modified date`.
 
-Continuing with the example above, if the episode air date is `2021-10-21` and the file last modified date is `2021-10-21 12:34:56` then the episode index becomes `1-211021-3456`.
+Continuing with the example above, if the episode air date is `2021-10-21` and the file last modified date is `2021-10-21 12:34:56` then the episode index becomes `1-1021-3456`.
 
 ## Why the seasons showing as `Season (Year)`?
 
