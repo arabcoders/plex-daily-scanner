@@ -52,6 +52,14 @@ except:
 # load custom path from env
 customPath = os.environ.get('JP_SCANNER_PATH') or PLEX_ROOT
 
+logging.basicConfig(
+    filename=os.path.join(PLEX_ROOT, 'Logs', 'jp_scanner.log'),
+    format="%(asctime)s [%(levelname)-5.5s] %(message)s",
+    level=logging.DEBUG
+)
+
+logger = logging.getLogger(__name__)
+
 LOGGING_LEVEL_MAP = {
     logging.DEBUG: 3,
     logging.INFO: 2,
@@ -131,32 +139,26 @@ def handleMatch(match, show, file=None):
     :param file: The file name.
     :return: A dict of the results.
     """
-    series = match.group('series') if match.groupdict().has_key(
-        'series') else None
-    month = match.group('month') if match.groupdict().has_key(
-        'month') else None
+    series = match.group('series') if match.groupdict().has_key('series') else None
+    month = match.group('month') if match.groupdict().has_key('month') else None
     day = match.group('day') if match.groupdict().has_key('day') else None
     year = match.group('year') if match.groupdict().has_key('year') else None
-    episode = match.group('episode') if match.groupdict().has_key(
-        'episode') else None
-    title = match.group('title') if match.groupdict().has_key(
-        'title') else None
+    episode = match.group('episode') if match.groupdict().has_key('episode') else None
+    title = match.group('title') if match.groupdict().has_key('title') else None
     if title:
         if show and show.lower() in title.lower():
             title = re.sub(re.escape(show), '', title, flags=re.IGNORECASE)
         title = re.sub('\[.+?\]', ' ', title).strip('-').strip()
 
-    season = match.group('season') if match.groupdict().has_key(
-        'season') else None
+    season = match.group('season') if match.groupdict().has_key('season') else None
 
     if year and len(year) == 2:
         year = '20' + year
 
-    released_date = "{}-{}-{}".format(year, month,
-                                      day) if year and month and day else None
+    released_date = "{}-{}-{}".format(year, month, day) if year and month and day else None
 
     if not season:
-        season = int(year) if year else 1
+        season = "{:>04}{:>02}".format(year, month) if year and month else 1
 
     if not episode:
         episode = int('1' + match.group('month') + match.group('day'))
@@ -170,10 +172,7 @@ def handleMatch(match, show, file=None):
         if match.groupdict().has_key('epNumber'):
             title = match.group('epNumber') + ' - ' + title
         elif title and released_date and released_date != title:
-            title = "{} ~ {}".format(
-                released_date.replace('-', '')[2:],
-                title
-            )
+            title = "{} ~ {}".format(released_date.replace('-', '')[2:], title)
 
         title = title.strip()
 
@@ -206,16 +205,18 @@ def handleYouTube(fullpath, file):
             data = json.load(json_data)
             json_data.close()
         except Exception as e:
-            logit("Error loading json file: " + str(json_file) + " - " + str(e), logging.ERROR)
+            logit("Error loading json file: {} - {}".format(str(json_file), str(e)), logging.ERROR)
             return None
-
-        if not data.get('upload_date'):
+        
+        if data.get('upload_date', None):
+            json_date = YT_JSON_DATE_RX.match(data.get('upload_date'))
+        elif data.get('epoch', None):
+            json_date = YT_JSON_DATE_RX.match(time.strftime("%Y%m%d", time.gmtime(float(data.get('epoch')))))
+        else:
             json_date = YT_FILE_DATE.search(os.path.basename(file))
             if not json_date:
-                logit("Error matching file: '{}', no upload_date in json.file".format(file))
+                logit("Error matching file: '{}', and no upload_date in json.file".format(file))
                 return None
-        else:
-            json_date = YT_JSON_DATE_RX.match(data.get('upload_date'))
 
         title = data.get('title')
         year = json_date.group('year') if json_date else None
@@ -224,7 +225,8 @@ def handleYouTube(fullpath, file):
 
         month = json_date.group('month') if json_date else None
         day = json_date.group('day') if json_date else None
-        season = year
+        season = "{:>04}{:>02}".format(year, month) if year and month else 1
+
         released_date = "{}-{}-{}".format(year, month, day) if year and month and day else None
 
         if not data.get('epoch'):
@@ -240,11 +242,10 @@ def handleYouTube(fullpath, file):
         if title:
             title = re.sub('\[.+?\]', ' ', title).strip('-').strip()
 
-        episode = '1{:>02}{:>02}{:>02}{:>02}'.format(
-            month, day, minute, seconds)
+        episode = '1{:>02}{:>02}{:>02}{:>02}'.format(month, day, minute, seconds)
         if not episode:
-            logit("Error matching youtube file: " + str(file)+" - " +
-                  str(month)+" - "+str(day)+" - "+str(hour)+" - "+str(minute))
+            logit("Error matching youtube file: {} - {} - {} - {} - {}".format(
+                str(file), str(month), str(day), str(hour), str(minute)))
             return None
 
         return {"season": season, "episode": episode, "title": title, "year": year,  "month": month,
@@ -253,28 +254,25 @@ def handleYouTube(fullpath, file):
     # Pull info from filename if info.json doesn't exist
     match = YT_FILE_RX.match(file)
     if not match:
-        logit("Error matching youtube file: " + str(file))
+        logit("Error matching youtube file: '{}'.".format(str(file)))
         return None
 
-    logit("Failed to find " + str(json_file) + " for: " +
-          str(file) + " so using filename instead.", logging.WARNING)
+    logit("Failed to find '{}' for '{}', so using mod file instead.".format(json_file, file), logging.WARNING)
 
-    title = match.group('title') if match.groupdict().has_key(
-        'title') else None
+    title = match.group('title') if match.groupdict().has_key('title') else None
     year = match.group('year') if match.groupdict().has_key('year') else None
-    month = match.group('month') if match.groupdict().has_key(
-        'month') else None
+    month = match.group('month') if match.groupdict().has_key('month') else None
     day = match.group('day') if match.groupdict().has_key('day') else None
-    season = match.group('year') if match.groupdict().has_key('year') else None
-    released_date = "%s-%s-%s" % (year, month,
-                                  day) if year and month and day else None
+    season = "{:>04}{:>02}".format(year, month) if year and month else 1
+    released_date = "{}-{}-{}".format(year, month, day) if year and month and day else None
+
     json_ts = time.gmtime(os.path.getmtime(fullpath))
     hour = json_ts[3]
     minute = json_ts[4]
     seconds = json_ts[5]
     episode = '1{:>02}{:>02}{:>02}{:>02}'.format(month, day, minute, seconds)
     if not episode:
-        logit("Error matching youtube file: " + str(file))
+        logit("Error matching youtube file: '{}'.".format(str(file)))
         return None
 
     # for title replace content in brackets with nothing
@@ -287,6 +285,14 @@ def handleYouTube(fullpath, file):
 
 
 def Scan(path, files, mediaList, subdirs):
+    try:
+        scan_real(path, files, mediaList, subdirs)
+    except Exception as e:
+        logit("Error scanning '{}'. {} ".format(path, str(e)), logging.ERROR)
+        logger.error("Error scanning. {}".format(str(e)))
+
+
+def scan_real(path, files, mediaList, subdirs):
     """
     Scan for video files.
     """
@@ -376,9 +382,9 @@ def Scan(path, files, mediaList, subdirs):
 
 
 if __name__ == '__main__':
-    logit("jp_scanner.py: " + str(__version__))
+    logger.info("jp_scanner.py: " + str(__version__))
     path = sys.argv[1]
     files = [os.path.join(path, file) for file in os.listdir(path)]
     media = []
     Scan(path[1:], files, media, [])
-    logit("Files detected: " + str(media), logging.DEBUG)
+    logger.info("Files detected: " + str(media), logging.DEBUG)

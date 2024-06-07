@@ -16,3 +16,4 @@ test/*
 aadnk/*
 whisper-ctranslate2/*
 .env
+custom-deploy.sh
