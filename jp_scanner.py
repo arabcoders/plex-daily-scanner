@@ -91,8 +91,6 @@ YT_FILE_RX = re.compile(
 YT_JSON_DATE_RX = re.compile(r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})', re.IGNORECASE)
 YT_FILE_DATE = re.compile(r'^(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s?', re.IGNORECASE)
 
-WS_MULTI_EP_SIMPLE = re.compile(ur'^(?P<ep>\d{1,3})-(?P<ep2>\d{1,3})$', re.UNICODE | re.IGNORECASE)
-
 ME_LIST = []
 MULTI_EPISODES_PARSER = [
     # ep01-ep02 or ep01-02 or E01-E02 or E01-02
