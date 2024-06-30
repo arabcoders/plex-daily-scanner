@@ -2,11 +2,21 @@
 
 """
 This file extends Plex filename parser to support the standard japanese daily episodes.
+
 The supported formats are:
+
     YY?YY(-._)MM(-._)DD -? series -? epNumber -? title
     YY?YY(-._)MM(-._)DD -? title
     title YY?YY(-._)MM(-._)DD at end of filename.
-    series - YY?YY(-._)MM(-._)DD -? title    
+    series - YY?YY(-._)MM(-._)DD -? title
+This scanner also support limited set of standard scanner formats.
+    
+
+# VERSION HISTORY
+1.1 - 2024-01-01:
+* Added support for multi-episodes.
+1.0 - 2024-01-15:
+* Initial version.
 """
 
 # I needed some plex libraries, you may need to adjust your plex install location accordingly
@@ -30,7 +40,7 @@ __copyright__ = "Copyright 2024"
 __credits__ = ["ArabCoders"]
 
 __license__ = "MIT"
-__version__ = "1.0"
+__version__ = "1.2"
 __maintainer__ = "ArabCoders"
 __email__ = ""
 
@@ -81,6 +91,22 @@ YT_FILE_RX = re.compile(
 YT_JSON_DATE_RX = re.compile(r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})', re.IGNORECASE)
 YT_FILE_DATE = re.compile(r'^(?P<year>\d{2,4})(\-|\.|_)?(?P<month>\d{2})(\-|\.|_)?(?P<day>\d{2})\s?', re.IGNORECASE)
 
+WS_MULTI_EP_SIMPLE = re.compile(ur'^(?P<ep>\d{1,3})-(?P<ep2>\d{1,3})$', re.UNICODE | re.IGNORECASE)
+
+ME_LIST = []
+MULTI_EPISODES_PARSER = [
+    # ep01-ep02 or ep01-02 or E01-E02 or E01-02
+    ur'(EP|E)(?P<start>\d{1,4})-(EP|E)?(?P<end>\d{1,4})'
+]
+
+# Load default scanner regex.
+for rx in MULTI_EPISODES_PARSER:
+    try:
+        ME_LIST.append(re.compile(rx, re.UNICODE | re.IGNORECASE))
+    except Exception as e:
+        logit("Error compiling default multi episodes parser regex " + str(rx) + " - " + str(e), logging.ERROR)
+
+
 RX_LIST = []
 
 DEFAULT_RX = [
@@ -100,6 +126,8 @@ DEFAULT_RX = [
     r'(?P<title>.+?)\s?[Ee][Pp](?P<episode>[0-9]{1,4})$',
     # Standard scanner Series - S00E00 - Title
     r'^(?P<series>.+?)[Ss](?P<season>[0-9]{1,})[Ee](?P<episode>[0-9]{1,})\s?-?(?P<title>.+)',
+    # series - ep100 - Title
+    r'(?P<series>.+?)\s?[Ee][Pp](?P<episode>[0-9]{1,4})\s?-?(?P<title>.+)',
 ]
 
 # Load Custom Regex patterns.matchers from `jp_scanner.json` file.
@@ -158,7 +186,7 @@ def handleMatch(match, show, file=None):
     released_date = "{}-{}-{}".format(year, month, day) if year and month and day else None
 
     if not season:
-        season = "{:>04}{:>02}".format(year, month) if year and month else 1
+        season = "{:>04}".format(year) if year else 1
 
     if not episode:
         episode = int('1' + match.group('month') + match.group('day'))
@@ -207,7 +235,7 @@ def handleYouTube(fullpath, file):
         except Exception as e:
             logit("Error loading json file: {} - {}".format(str(json_file), str(e)), logging.ERROR)
             return None
-        
+
         if data.get('upload_date', None):
             json_date = YT_JSON_DATE_RX.match(data.get('upload_date'))
         elif data.get('epoch', None):
@@ -225,7 +253,7 @@ def handleYouTube(fullpath, file):
 
         month = json_date.group('month') if json_date else None
         day = json_date.group('day') if json_date else None
-        season = "{:>04}{:>02}".format(year, month) if year and month else 1
+        season = "{:>04}".format(year) if year else 1
 
         released_date = "{}-{}-{}".format(year, month, day) if year and month and day else None
 
@@ -263,7 +291,7 @@ def handleYouTube(fullpath, file):
     year = match.group('year') if match.groupdict().has_key('year') else None
     month = match.group('month') if match.groupdict().has_key('month') else None
     day = match.group('day') if match.groupdict().has_key('day') else None
-    season = "{:>04}{:>02}".format(year, month) if year and month else 1
+    season = "{:>04}".format(year) if year else 1
     released_date = "{}-{}-{}".format(year, month, day) if year and month and day else None
 
     json_ts = time.gmtime(os.path.getmtime(fullpath))
@@ -351,24 +379,58 @@ def scan_real(path, files, mediaList, subdirs):
                             continue
 
                         found = True
+                        isMultiEpisode = False
 
-                        tv_show = Media.Episode(
-                            show=UnicodeHelper.toBytes(show),
-                            season=data.get('season'),
-                            episode=data.get('episode'),
-                            title=UnicodeHelper.toBytes(data.get('title')),
-                            year=data.get('year')
-                        )
+                        # handle multi episodes
+                        for me in ME_LIST:
+                            me_match = me.search(file)
 
-                        if data.get('released_date'):
-                            tv_show.released_at = data.get('released_date')
+                            if not me_match:
+                                continue
 
-                        logit("{}: {} - S{}E{}".format(
-                            file, show, data.get('season'), data.get('episode')
-                        ), logging.DEBUG)
+                            logit("Multi episode file found. '{}' found.".format(file), logging.INFO)
 
-                        tv_show.parts.append(i)
-                        mediaList.append(tv_show)
+                            isMultiEpisode = True
+                            ep1 = int(me_match.group('start'))
+                            ep2 = int(me_match.group('end'))
+                            for e in range(ep1, ep2+1):
+                                tv_show = Media.Episode(
+                                    show=UnicodeHelper.toBytes(show),
+                                    season=int(data.get('season')),
+                                    episode=e,
+                                    title=UnicodeHelper.toBytes(data.get('title')),
+                                    year=data.get('year')
+                                )
+
+                                if data.get('released_date'):
+                                    tv_show.released_at = data.get('released_date')
+
+                                tv_show.display_offset = (e-ep1)*100/(ep2-ep1+1)
+
+                                logit("[MM] '{}' - {} - S{}E{}".format(file, show, data.get('season'), e), logging.DEBUG)
+
+                                tv_show.parts.append(i)
+                                mediaList.append(tv_show)
+
+                        if not isMultiEpisode:
+                            tv_show = Media.Episode(
+                                show=UnicodeHelper.toBytes(show),
+                                season=int(data.get('season')),
+                                episode=int(data.get('episode')),
+                                title=UnicodeHelper.toBytes(data.get('title')),
+                                year=data.get('year')
+                            )
+
+                            if data.get('released_date'):
+                                tv_show.released_at = data.get('released_date')
+
+                            logit("{}: {} - S{}E{}".format(
+                                file, show, data.get('season'), data.get('episode')
+                            ), logging.DEBUG)
+
+                            tv_show.parts.append(i)
+                            mediaList.append(tv_show)
+
                         break
 
                 if True == found:
