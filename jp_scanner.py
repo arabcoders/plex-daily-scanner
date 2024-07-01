@@ -380,35 +380,36 @@ def scan_real(path, files, mediaList, subdirs):
                         isMultiEpisode = False
 
                         # handle multi episodes
-                        for me in ME_LIST:
-                            me_match = me.search(file)
+                        if not data.get('released_date'):
+                            for me in ME_LIST:
+                                me_match = me.search(file)
 
-                            if not me_match:
-                                continue
+                                if not me_match:
+                                    continue
 
-                            logit("Multi episode file found. '{}' found.".format(file), logging.INFO)
+                                logit("Multi episode file found. '{}' found.".format(file), logging.INFO)
 
-                            isMultiEpisode = True
-                            ep1 = int(me_match.group('start'))
-                            ep2 = int(me_match.group('end'))
-                            for e in range(ep1, ep2+1):
-                                tv_show = Media.Episode(
-                                    show=UnicodeHelper.toBytes(show),
-                                    season=int(data.get('season')),
-                                    episode=e,
-                                    title=UnicodeHelper.toBytes(data.get('title')),
-                                    year=data.get('year')
-                                )
+                                isMultiEpisode = True
+                                ep1 = int(me_match.group('start'))
+                                ep2 = int(me_match.group('end'))
+                                for e in range(ep1, ep2+1):
+                                    tv_show = Media.Episode(
+                                        show=UnicodeHelper.toBytes(show),
+                                        season=int(data.get('season')),
+                                        episode=e,
+                                        title=UnicodeHelper.toBytes(data.get('title')),
+                                        year=data.get('year')
+                                    )
 
-                                if data.get('released_date'):
-                                    tv_show.released_at = data.get('released_date')
+                                    if data.get('released_date'):
+                                        tv_show.released_at = data.get('released_date')
 
-                                tv_show.display_offset = (e-ep1)*100/(ep2-ep1+1)
+                                    tv_show.display_offset = (e-ep1)*100/(ep2-ep1+1)
 
-                                logit("[MM] '{}' - {} - S{}E{}".format(file, show, data.get('season'), e), logging.DEBUG)
+                                    logit("[MM] '{}' - {} - S{}E{}".format(file, show, data.get('season'), e), logging.DEBUG)
 
-                                tv_show.parts.append(i)
-                                mediaList.append(tv_show)
+                                    tv_show.parts.append(i)
+                                    mediaList.append(tv_show)
 
                         if not isMultiEpisode:
                             tv_show = Media.Episode(
