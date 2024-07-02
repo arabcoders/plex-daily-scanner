@@ -4,7 +4,6 @@
 This file extends Plex filename parser to support the standard japanese daily episodes.
 
 The supported formats are:
-
     YY?YY(-._)MM(-._)DD -? series -? epNumber -? title
     YY?YY(-._)MM(-._)DD -? title
     title YY?YY(-._)MM(-._)DD at end of filename.
@@ -13,18 +12,18 @@ This scanner also support limited set of standard scanner formats.
     
 
 # VERSION HISTORY
-1.1 - 2024-01-01:
+1.2 - 2024-07-02:
+* Replaced mtime with extend_id, which hash the filename and covert it to number. Should be more resistant to changes. 
+1.1 - 2024-07-01:
 * Added support for multi-episodes.
 1.0 - 2024-01-15:
 * Initial version.
 """
 
-# I needed some plex libraries, you may need to adjust your plex install location accordingly
 import sys
 import re
 import os
 import os.path
-import sys
 import logging
 import inspect
 import json
@@ -34,6 +33,7 @@ import Stack
 import Utils
 import time
 import UnicodeHelper
+import hashlib
 
 __author__ = "ArabCoders"
 __copyright__ = "Copyright 2024"
@@ -76,6 +76,37 @@ LOGGING_LEVEL_MAP = {
     logging.WARNING: 1,
     logging.ERROR: 0
 }
+
+
+def sanitize_path(p):
+    if not isinstance(p, unicode):
+        return p.decode(sys.getfilesystemencoding() or 'utf-8', 'replace')
+    return p
+
+
+def extend_id(path):
+    # 1. Get the basename, remove the extension, and convert to lowercase
+    basename = os.path.splitext(os.path.basename(path))[0].lower()
+
+    try:
+        # 2. Hash the basename using SHA-256
+        try:
+            hash_object = hashlib.sha256(basename.encode('utf-8'))
+        except UnicodeDecodeError:
+            hash_object = hashlib.sha256(sanitize_path(basename).encode('utf-8'))
+        hash_hex = hash_object.hexdigest()
+
+        # 3. Convert hexadecimal characters to ASCII values
+        ascii_values = ''.join([str(ord(c)) for c in hash_hex])
+    except Exception as e:
+        logit("Error hashing '{}' '{}' .".format(str(e), sanitize_path(basename)), logging.ERROR)
+        return 1000
+
+    # 4. Get the final 4 digits, ensure it's a 4-digit integer
+    four_digit_string = ascii_values[:4] if len(ascii_values) >= 4 else ascii_values.ljust(4, '9')
+    four_digit_number = int(four_digit_string)
+
+    return four_digit_number
 
 
 def logit(message, level=logging.INFO):
@@ -205,11 +236,8 @@ def handleMatch(match, show, file=None):
     if season is None and episode is None:
         return None
 
-    if file and released_date and len(str(episode)) < 8 and os.path.exists(file):
-        json_ts = time.gmtime(os.path.getmtime(file))
-        minute = json_ts[4]
-        seconds = json_ts[5]
-        episode = int('{}{:>02}{:>02}'.format(episode, minute, seconds))
+    if file and released_date and len(str(episode)) < 8:
+        episode = int('{}{:>04}'.format(episode, extend_id(file)))
 
     return {"season": season, "episode": episode, "title": title, "year": year, "month": month, "day": day, 'released_date': released_date}
 
@@ -255,27 +283,17 @@ def handleYouTube(fullpath, file):
 
         released_date = "{}-{}-{}".format(year, month, day) if year and month and day else None
 
-        if not data.get('epoch'):
-            json_ts = time.gmtime(os.path.getmtime(fullpath))
-        else:
-            json_ts = time.gmtime(float(data.get('epoch')))
-
-        hour = json_ts[3]
-        minute = json_ts[4]
-        seconds = json_ts[5]
-
         # for title replace content in brackets with nothing
         if title:
             title = re.sub('\[.+?\]', ' ', title).strip('-').strip()
 
-        episode = '1{:>02}{:>02}{:>02}{:>02}'.format(month, day, minute, seconds)
+        episode = '1{:>02}{:>02}{:>04}'.format(month, day, extend_id(fullpath))
         if not episode:
-            logit("Error matching youtube file: {} - {} - {} - {} - {}".format(
-                str(file), str(month), str(day), str(hour), str(minute)))
+            logit("Error matching youtube file: {} - {} - {} - {} - {}".format(str(file)))
             return None
 
         return {"season": season, "episode": episode, "title": title, "year": year,  "month": month,
-                "day": day, "hour": hour, "minute": minute, 'released_date': released_date}
+                "day": day, 'released_date': released_date}
 
     # Pull info from filename if info.json doesn't exist
     match = YT_FILE_RX.match(file)
@@ -292,11 +310,7 @@ def handleYouTube(fullpath, file):
     season = "{:>04}".format(year) if year else 1
     released_date = "{}-{}-{}".format(year, month, day) if year and month and day else None
 
-    json_ts = time.gmtime(os.path.getmtime(fullpath))
-    hour = json_ts[3]
-    minute = json_ts[4]
-    seconds = json_ts[5]
-    episode = '1{:>02}{:>02}{:>02}{:>02}'.format(month, day, minute, seconds)
+    episode = '1{:>02}{:>02}{:>04}'.format(month, day, extend_id(fullpath))
     if not episode:
         logit("Error matching youtube file: '{}'.".format(str(file)))
         return None
@@ -307,15 +321,15 @@ def handleYouTube(fullpath, file):
 
     return {
         "season": season, "episode": episode, "title": title, "year": year, "month": month,
-        "day": day,  "hour": hour, "minute": minute, 'released_date': released_date}
+        "day": day, 'released_date': released_date}
 
 
 def Scan(path, files, mediaList, subdirs):
     try:
         scan_real(path, files, mediaList, subdirs)
     except Exception as e:
-        logit("Error scanning '{}'. {} ".format(path, str(e)), logging.ERROR)
-        logger.error("Error scanning. {}".format(str(e)))
+        logit("!Error! scanning '{}'. {} {}".format(path, str(e), e), logging.ERROR)
+        logger.error("Error scanning. {}".format(e))
 
 
 def scan_real(path, files, mediaList, subdirs):
@@ -401,12 +415,11 @@ def scan_real(path, files, mediaList, subdirs):
                                         year=data.get('year')
                                     )
 
-                                    if data.get('released_date'):
-                                        tv_show.released_at = data.get('released_date')
-
+                                    tv_show.released_at = data.get('released_date')
                                     tv_show.display_offset = (e-ep1)*100/(ep2-ep1+1)
 
-                                    logit("[MM] '{}' - {} - S{}E{}".format(file, show, data.get('season'), e), logging.DEBUG)
+                                    logit("[MM] '{}' - {} - S{}E{}".format(file,
+                                          show, data.get('season'), e), logging.DEBUG)
 
                                     tv_show.parts.append(i)
                                     mediaList.append(tv_show)
