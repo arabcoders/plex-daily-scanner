@@ -78,35 +78,28 @@ LOGGING_LEVEL_MAP = {
 }
 
 
-def sanitize_path(p):
+def _n(p):
     if not isinstance(p, unicode):
         return p.decode(sys.getfilesystemencoding() or 'utf-8', 'replace')
     return p
 
 
 def extend_id(path):
-    # 1. Get the basename, remove the extension, and convert to lowercase
-    basename = os.path.splitext(os.path.basename(path))[0].lower()
-
+    basename = os.path.splitext(os.path.basename(path))[0].decode('utf-8').lower()
     try:
-        # 2. Hash the basename using SHA-256
         try:
             hash_object = hashlib.sha256(basename.encode('utf-8'))
-        except UnicodeDecodeError:
-            hash_object = hashlib.sha256(sanitize_path(basename).encode('utf-8'))
+        except UnicodeEncodeError:
+            hash_object = hashlib.sha256(_n(basename).encode('utf-8', 'replace'))
+
         hash_hex = hash_object.hexdigest()
-
-        # 3. Convert hexadecimal characters to ASCII values
         ascii_values = ''.join([str(ord(c)) for c in hash_hex])
+        four_digit_string = ascii_values[:4] if len(ascii_values) >= 4 else ascii_values.ljust(4, '9')
+        four_digit_number = int(four_digit_string)
+        return four_digit_number
     except Exception as e:
-        logit("Error hashing '{}' '{}' .".format(str(e), sanitize_path(basename)), logging.ERROR)
+        logging.error("Error hashing '{}' '{}' .".format(str(e), _n(basename)))
         return 1000
-
-    # 4. Get the final 4 digits, ensure it's a 4-digit integer
-    four_digit_string = ascii_values[:4] if len(ascii_values) >= 4 else ascii_values.ljust(4, '9')
-    four_digit_number = int(four_digit_string)
-
-    return four_digit_number
 
 
 def logit(message, level=logging.INFO):
